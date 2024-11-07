@@ -919,65 +919,115 @@ if __name__ == "__main__":
     print("Outliers:", outliers)
 
 12)
-import networkx as nx
-import numpy as np
+import itertools
+from collections import defaultdict
 
-def calculate_reachability(graph, node, epsilon):
-    neighbors = list(graph.neighbors(node))
-    reachability = []
-    for neighbor in neighbors:
-        if len(set(graph.neighbors(neighbor)).intersection(neighbors)) >= epsilon:
-            reachability.append(neighbor)
-    return reachability
-
-def scan(graph, epsilon, min_pts):
-    visited = set()
-    clusters = []
-    outliers = []
-
-    for node in graph.nodes():
-        if node in visited:
-            continue
-        visited.add(node)
-        
-        reachability = calculate_reachability(graph, node, epsilon)
-        
-        if len(reachability) < min_pts:
-            outliers.append(node)
-            continue
-        
-        # Start a new cluster
-        new_cluster = [node]
-        to_expand = reachability[:]
-        
-        while to_expand:
-            current = to_expand.pop()
-            if current in visited:
-                continue
-            visited.add(current)
-            new_cluster.append(current)
-
-            current_reachability = calculate_reachability(graph, current, epsilon)
-            for neighbor in current_reachability:
-                if neighbor not in visited:
-                    to_expand.append(neighbor)
-
-        clusters.append(new_cluster)
+class Graph:
+    def __init__(self):
+        self.edges = defaultdict(list)
+        self.nodes = set()
     
-    return clusters, outliers
+    def add_edge(self, u, v, label):
+        self.edges[u].append((v, label))
+        self.edges[v].append((u, label))
+        self.nodes.update([u, v])
+
+class gSpan:
+    def __init__(self, min_support=2):
+        self.min_support = min_support
+        self.frequent_subgraphs = []
+        self.graph_database = []
+    
+    def add_graph(self, graph):
+        self.graph_database.append(graph)
+    
+    def get_support(self, subgraph):
+        """Check support of a subgraph pattern within the graph database."""
+        count = 0
+        for graph in self.graph_database:
+            if self.is_subgraph(graph, subgraph):
+                count += 1
+        return count
+    
+    def is_subgraph(self, graph, subgraph):
+        """Check if subgraph is part of a larger graph."""
+        # This is a simplified check and needs a more rigorous implementation
+        # to perform subgraph isomorphism.
+        return set(subgraph.nodes).issubset(set(graph.nodes))
+    
+    def search(self):
+        """Generate initial patterns and begin DFS exploration."""
+        initial_patterns = self.generate_initial_patterns()
+        for pattern in initial_patterns:
+            self.dfs(pattern)
+    
+    def generate_initial_patterns(self):
+        """Generate 1-edge subgraphs as starting patterns."""
+        patterns = []
+        for graph in self.graph_database:
+            for u in graph.nodes:
+                for v, label in graph.edges[u]:
+                    if u < v:  # To avoid duplicating edges
+                        new_pattern = Graph()
+                        new_pattern.add_edge(u, v, label)
+                        patterns.append(new_pattern)
+        return patterns
+    
+    def dfs(self, subgraph):
+        """Depth-first search to grow the subgraph."""
+        support = self.get_support(subgraph)
+        if support < self.min_support:
+            return
+        self.frequent_subgraphs.append(subgraph)
+
+        extensions = self.generate_extensions(subgraph)
+        for extension in extensions:
+            self.dfs(extension)
+    
+    def generate_extensions(self, subgraph):
+        """Generate candidate extensions for the given subgraph."""
+        extensions = []
+        for node in subgraph.nodes:
+            for graph in self.graph_database:
+                for neighbor, label in graph.edges[node]:
+                    if neighbor not in subgraph.nodes:
+                        new_subgraph = Graph()
+                        new_subgraph.edges = subgraph.edges.copy()
+                        new_subgraph.nodes = subgraph.nodes.copy()
+                        new_subgraph.add_edge(node, neighbor, label)
+                        extensions.append(new_subgraph)
+        return extensions
 
 # Example usage
 if __name__ == "__main__":
-    # Create a sample graph
-    G = nx.Graph()
-    edges = [(1, 2), (2, 3), (3, 1), (4, 5), (5, 6), (6, 4), (7, 8)]
-    G.add_edges_from(edges)
+    # Define a sample graph database
+    g1 = Graph()
+    g1.add_edge(1, 2, 'A')
+    g1.add_edge(2, 3, 'B')
+    g1.add_edge(3, 4, 'C')
 
-    # Parameters for SCAN
-    epsilon = 2  # Minimum number of shared neighbors to consider a node connected
-    min_pts = 1  # Minimum number of points to form a cluster
+    g2 = Graph()
+    g2.add_edge(1, 2, 'A')
+    g2.add_edge(2, 3, 'B')
+    g2.add_edge(3, 5, 'D')
 
-    clusters, outliers = scan(G, epsilon, min_pts)
+    g3 = Graph()
+    g3.add_edge(1, 3, 'A')
+    g3.add_edge(3, 4, 'B')
+    g3.add_edge(4, 5, 'C')
 
-    print("Clusters:", clusters)
-    print("Outliers:", outliers)
+    # Run gSpan on the graph database
+    gspan = gSpan(min_support=2)
+    gspan.add_graph(g1)
+    gspan.add_graph(g2)
+    gspan.add_graph(g3)
+    
+    gspan.search()
+
+    print("Frequent subgraphs found:")
+    for i, subgraph in enumerate(gspan.frequent_subgraphs, 1):
+        print(f"Subgraph {i}:")
+        for node, edges in subgraph.edges.items():
+            for (neighbor, label) in edges:
+                print(f"{node} --{label}--> {neighbor}")
+        print()
